@@ -1,0 +1,258 @@
+<html><head></head><body><div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a>upnode (v0.5.0)</a>
+</h1>
+<h4>transactional connection queue for dnode</h4>
+<div class="apidocSectionDiv"><a href="#apidoc.tableOfContents" id="apidoc.tableOfContents"><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.upnode">module upnode</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.upnode.upnode">
+            function <span class="apidocSignatureSpan"></span>upnode
+            <span class="apidocSignatureSpan">(cons)</span>
+            </a>
+
+        </li>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.upnode.connect">
+            function <span class="apidocSignatureSpan">upnode.</span>connect
+            <span class="apidocSignatureSpan">()</span>
+            </a>
+
+        </li>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.upnode.listen">
+            function <span class="apidocSignatureSpan">upnode.</span>listen
+            <span class="apidocSignatureSpan">()</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.upnode" id="apidoc.module.upnode">module upnode</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.upnode.upnode" id="apidoc.element.upnode.upnode">
+        function <span class="apidocSignatureSpan"></span>upnode
+        <span class="apidocSignatureSpan">(cons)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">upnode = function (cons) {
+    var self = {};
+    self.connect = function () {
+        var args = [].slice.call(arguments);
+        var up = createConnectionUp();
+        if (!self._ups) self._ups = [];
+        self._ups.push(up);
+        return connect.apply(null, [ up, cons ].concat(args));
+    };
+
+    self.writable = true;
+    self.readable = true;
+
+    var names = Object.keys(EventEmitter.prototype).concat(
+        'pipe', 'write', 'end', 'destroy'
+    );
+    names.forEach(function (name) {
+        self[name] = function (buf) {
+            var h = self._serverHandle;
+            if (!h) h = self._serverHandle = serverHandle(cons);
+            return h[name].apply(h, arguments);
+        };
+    });
+
+    self.listen = function () {
+        var args = parseArgs(arguments);
+
+        var server = net.createServer();
+        server._ds = [];
+
+        server.on('connection', function (stream) {
+            var d = serverHandle(cons);
+            d.stream = stream;
+            d.pipe(stream).pipe(d);
+
+            server._ds.push(d);
+            d.once('done', function () {
+                var ix = server._ds.indexOf(d);
+                if (ix &gt;= 0) server._ds.splice(ix, 1);
+            });
+        });
+
+        if (args.port) {
+            server.listen(args.port, args.host, args.block);
+        }
+        else if (args.path) {
+            server.listen(args.path, args.block);
+        }
+        else throw new Error("no port or path given to .listen()");
+
+        if (!self.close) {
+            self._servers = [];
+            self.close = function () {
+                self._closed = true;
+                self._servers.forEach(function (s) {
+                    if (!s._closed) s.close();
+                    s._closed = true;
+                });
+            };
+        }
+        self._servers.push(server);
+
+        if (!server.end) server.end = function () {
+            (self._servers || []).forEach(function (server) {
+                (server._ds || []).forEach(function (c) {
+                    c.destroy();
+                });
+            });
+        };
+
+        self.end = function () {
+            if (!self._closed) self.close();
+
+            (self._servers || []).forEach(function (server) {
+                server.end();
+            });
+            (self._ups || []).forEach(function (up) {
+                up.end();
+            });
+        };
+
+        return server;
+    };
+
+    return self;
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+
+    <h2>
+        <a href="#apidoc.element.upnode.connect" id="apidoc.element.upnode.connect">
+        function <span class="apidocSignatureSpan">upnode.</span>connect
+        <span class="apidocSignatureSpan">()</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">connect = function () {
+    return upnode({}).connect.apply(null, arguments);
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">...
+If the connection is down the callback is buffered and fires when the connection
+is ready again.
+
+client.js:
+
+``` js
+var upnode = require('upnode');
+var up = upnode.<span class="apidocCodeKeywordSpan">connect</span>(7000);
+
+setInterval(function () {
+up(function (remote) {
+    remote.time(function (t) {
+        console.log('time = ' + t);
+    });
+});
+...</pre></li>
+    </ul>
+
+
+
+    <h2>
+        <a href="#apidoc.element.upnode.listen" id="apidoc.element.upnode.listen">
+        function <span class="apidocSignatureSpan">upnode.</span>listen
+        <span class="apidocSignatureSpan">()</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">listen = function () {
+    return upnode({}).listen.apply(null, arguments);
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">...
+
+``` js
+var upnode = require('upnode');
+
+var server = upnode(function (client, conn) {
+    this.time = function (cb) { cb(new Date().toString()) };
+});
+server.<span class="apidocCodeKeywordSpan">listen</span>(7000);
+```
+
+Now when you want to make a call to the server, guard your connection in the
+`up()` function. If the connection is alive the callback fires immediately.
+If the connection is down the callback is buffered and fires when the connection
+is ready again.
+...</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
+</body></html>
